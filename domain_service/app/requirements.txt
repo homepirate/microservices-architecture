@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+grpcio
+grpcio-tools
+pymongo
+pika
+python-json-logger

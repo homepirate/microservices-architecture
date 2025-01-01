@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package domain;
+
+service DomainService {
+    rpc GetSchedule(GetRequest) returns (GetResponse);
+    rpc ListSchedules(ListRequest) returns (ListResponse);
+}
+
+message GetRequest {
+    string id = 1;
+}
+
+message GetResponse {
+    string schedule = 1;
+}
+
+message ListRequest {
+}
+
+message Schedule {
+    string id = 1;
+    string day_of_week = 2;
+    string start_time = 3;
+    string subject = 4;
+    string teacher = 5;
+}
+
+message ListResponse {
+    repeated Schedule schedules = 1;
+}
