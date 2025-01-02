@@ -5,9 +5,11 @@ from concurrent import futures
 import time
 import pika
 from pymongo import MongoClient
-
+from bson import ObjectId
 import domain_service_pb2
 import domain_service_pb2_grpc
+
+import logstash
 
 # Настройка логирования
 logger = logging.getLogger("domain_service")
@@ -16,6 +18,20 @@ logHandler = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logHandler.setFormatter(formatter)
 logger.addHandler(logHandler)
+
+import os
+LOGSTASH_HOST = os.getenv("LOGSTASH_HOST", "logstash")  # или "127.0.0.1", если локально
+LOGSTASH_PORT = 5000
+
+logstash_handler = logstash.TCPLogstashHandler(
+    host=LOGSTASH_HOST,
+    port=LOGSTASH_PORT,
+    version=1,              # Версия формата Logstash
+    message_type='log',     # Тип сообщения, по умолчанию 'logstash'
+    fqdn=False             # Не добавлять FQDN к сообщению
+)
+
+logger.addHandler(logstash_handler)
 
 # Настройка MongoDB
 mongo_client = MongoClient('mongodb://mongo:27017/')
@@ -30,9 +46,18 @@ rabbit_channel.queue_declare(queue='crud_operations', durable=True)
 
 class DomainServiceServicer(domain_service_pb2_grpc.DomainServiceServicer):
     def GetSchedule(self, request, context):
-        schedule = collection.find_one({"_id": request.id})
+        try:
+            obj_id = ObjectId(request.id)
+        except Exception as e:
+            logger.error(f"Invalid ID format: {request.id}")
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details('Invalid ID format')
+            return domain_service_pb2.GetResponse()
+
+        schedule = collection.find_one({"_id": obj_id})
         if schedule:
-            schedule['_id'] = str(schedule['_id'])  # Преобразуем ObjectId в строку
+            schedule['id'] = str(schedule['_id'])  # Добавлено поле id
+            del schedule['_id']  # Удаляем поле _id
             return domain_service_pb2.GetResponse(schedule=json.dumps(schedule))
         else:
             context.set_code(grpc.StatusCode.NOT_FOUND)
@@ -69,38 +94,20 @@ def handle_create(data):
 
 def handle_update(data):
     try:
-        collection.update_one({"_id": data["id"]}, {"$set": data})
+        _id = ObjectId(data["id"])
+        data.pop("id")
+        collection.update_one({"_id": _id}, {"$set": data})
         logger.info(f"Updated schedule with id {data['id']}: {data}")
     except Exception as e:
         logger.error(f"Error updating schedule: {e}")
 
 def handle_delete(data):
     try:
-        collection.delete_one({"_id": data["id"]})
+        collection.delete_one({"_id": ObjectId(data["id"])})
         logger.info(f"Deleted schedule with id {data['id']}")
     except Exception as e:
         logger.error(f"Error deleting schedule: {e}")
 
-    def ListSchedules(self, request, context):
-        try:
-            schedules_cursor = collection.find()
-            schedules = []
-            for sched in schedules_cursor:
-                sched['id'] = str(sched['_id'])  # Преобразуем ObjectId в строку
-                del sched['_id']  # Удаляем поле _id
-                schedules.append(domain_service_pb2.Schedule(
-                    id=sched['id'],
-                    day_of_week=sched['day_of_week'],
-                    start_time=sched['start_time'],
-                    subject=sched['subject'],
-                    teacher=sched['teacher']
-                ))
-            return domain_service_pb2.ListResponse(schedules=schedules)
-        except Exception as e:
-            logger.error(f"Error listing schedules: {e}")
-            context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details('Internal Server Error')
-            return domain_service_pb2.ListResponse()
 
 def callback(ch, method, properties, body):
     message = json.loads(body)

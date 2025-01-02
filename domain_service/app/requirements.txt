@@ -5,3 +5,4 @@ grpcio-tools
 pymongo
 pika
 python-json-logger
+python-logstash

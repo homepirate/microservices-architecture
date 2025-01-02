@@ -31,6 +31,7 @@ services:
     environment:
       - MONGO_URI=mongodb://mongo:27017/
       - RABBITMQ_HOST=rabbitmq
+      - LOGSTASH_HOST=logstash
 
   redis:
     image: redis:6.2
@@ -67,17 +68,18 @@ services:
       ME_CONFIG_MONGODB_SERVER: mongo
 
   opensearch:
-    image: opensearchproject/opensearch:1.2.4
+    image: opensearchproject/opensearch:1.3.0
     container_name: opensearch
     environment:
       - discovery.type=single-node
       - plugins.security.disabled=true
+      - OPENSEARCH_SECURITY_ENABLED=false
     ports:
       - "9200:9200"
       - "9600:9600"
 
   logstash:
-    image: logstash:7.17.0
+    image: opensearchproject/logstash-oss-with-opensearch-output-plugin:7.16.3
     container_name: logstash
     volumes:
       - ./logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
@@ -93,6 +95,7 @@ services:
       - "5601:5601"
     environment:
       - OPENSEARCH_HOSTS=http://opensearch:9200
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
     depends_on:
       - opensearch
 

@@ -17,12 +17,29 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 import domain_service_pb2
 import domain_service_pb2_grpc
 
+import logstash
+
 # Настройка логирования
 logger = logging.getLogger("gateway")
 logger.setLevel(logging.INFO)
 logHandler = logging.StreamHandler()
 logHandler.setFormatter(JsonFormatter())
 logger.addHandler(logHandler)
+
+
+import os
+LOGSTASH_HOST = os.getenv("LOGSTASH_HOST", "logstash")  # или "127.0.0.1", если локально
+LOGSTASH_PORT = 5000
+
+logstash_handler = logstash.TCPLogstashHandler(
+    host=LOGSTASH_HOST,
+    port=LOGSTASH_PORT,
+    version=1,              # Версия формата Logstash
+    message_type='log',     # Тип сообщения, по умолчанию 'logstash'
+    fqdn=False             # Не добавлять FQDN к сообщению
+)
+
+logger.addHandler(logstash_handler)
 
 # Настройка OpenTelemetry
 trace.set_tracer_provider(
@@ -107,7 +124,7 @@ async def prometheus_middleware(request, call_next):
 @app.get("/schedules")
 def list_schedules():
     cache_key = "schedules:all"
-    cache_ttl = 300  # Время жизни кэша в секундах (5 минут)
+    cache_ttl = 60  # Время жизни кэша в секундах (5 минут)
 
     try:
         # Попытка получить данные из кэша
@@ -186,10 +203,8 @@ def create_schedule(schedule: ScheduleCreate):
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 # Эндпоинт PUT через RabbitMQ
-@app.put("/schedule/{item_id}")
-def update_schedule(item_id: str, schedule: ScheduleUpdate):
-    if item_id != schedule.id:
-        raise HTTPException(status_code=400, detail="ID in path and body do not match")
+@app.put("/schedule")
+def update_schedule(schedule: ScheduleUpdate):
     message = {
         "operation": "update",
         "data": schedule.dict()
