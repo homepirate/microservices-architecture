@@ -1,0 +1,9 @@
+@echo off
+echo Loading images from 'images' directory...
+for %%i in (images\*.tar) do (
+    echo Loading %%i...
+    docker load -i %%i
+)
+
+echo Starting Docker Compose stack...
+docker-compose up

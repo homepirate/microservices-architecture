@@ -11,7 +11,6 @@ import domain_service_pb2_grpc
 
 import logstash
 
-# Настройка логирования
 logger = logging.getLogger("domain_service")
 logger.setLevel(logging.INFO)
 logHandler = logging.StreamHandler()
@@ -20,25 +19,23 @@ logHandler.setFormatter(formatter)
 logger.addHandler(logHandler)
 
 import os
-LOGSTASH_HOST = os.getenv("LOGSTASH_HOST", "logstash")  # или "127.0.0.1", если локально
+LOGSTASH_HOST = os.getenv("LOGSTASH_HOST", "logstash")
 LOGSTASH_PORT = 5000
 
 logstash_handler = logstash.TCPLogstashHandler(
     host=LOGSTASH_HOST,
     port=LOGSTASH_PORT,
-    version=1,              # Версия формата Logstash
-    message_type='log',     # Тип сообщения, по умолчанию 'logstash'
-    fqdn=False             # Не добавлять FQDN к сообщению
+    version=1,
+    message_type='log',
+    fqdn=False
 )
 
 logger.addHandler(logstash_handler)
 
-# Настройка MongoDB
 mongo_client = MongoClient('mongodb://mongo:27017/')
 db = mongo_client['schedule_db']
 collection = db['schedules']
 
-# Настройка RabbitMQ
 credentials = pika.PlainCredentials("admin", "admin")
 rabbit_connection = pika.BlockingConnection(pika.ConnectionParameters(host='rabbitmq', credentials=credentials))
 rabbit_channel = rabbit_connection.channel()
@@ -56,8 +53,8 @@ class DomainServiceServicer(domain_service_pb2_grpc.DomainServiceServicer):
 
         schedule = collection.find_one({"_id": obj_id})
         if schedule:
-            schedule['id'] = str(schedule['_id'])  # Добавлено поле id
-            del schedule['_id']  # Удаляем поле _id
+            schedule['id'] = str(schedule['_id'])
+            del schedule['_id']
             return domain_service_pb2.GetResponse(schedule=json.dumps(schedule))
         else:
             context.set_code(grpc.StatusCode.NOT_FOUND)
@@ -69,8 +66,8 @@ class DomainServiceServicer(domain_service_pb2_grpc.DomainServiceServicer):
             schedules_cursor = collection.find()
             schedules = []
             for sched in schedules_cursor:
-                sched['id'] = str(sched['_id'])  # Преобразуем ObjectId в строку
-                del sched['_id']  # Удаляем поле _id
+                sched['id'] = str(sched['_id'])
+                del sched['_id']
                 schedules.append(domain_service_pb2.Schedule(
                     id=sched['id'],
                     day_of_week=sched['day_of_week'],
@@ -140,16 +137,14 @@ def serve_grpc():
     logger.info("gRPC server started on port 50051")
     try:
         while True:
-            time.sleep(86400)  # Один день
+            time.sleep(86400)
     except KeyboardInterrupt:
         server.stop(0)
         logger.info("gRPC server stopped")
 
 if __name__ == '__main__':
     import threading
-    # Запуск потребителя RabbitMQ в отдельном потоке
     rabbit_thread = threading.Thread(target=consume_messages, daemon=True)
     rabbit_thread.start()
 
-    # Запуск gRPC сервера
     serve_grpc()

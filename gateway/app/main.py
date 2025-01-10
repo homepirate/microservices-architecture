@@ -28,20 +28,19 @@ logger.addHandler(logHandler)
 
 
 import os
-LOGSTASH_HOST = os.getenv("LOGSTASH_HOST", "logstash")  # или "127.0.0.1", если локально
+LOGSTASH_HOST = os.getenv("LOGSTASH_HOST", "logstash")
 LOGSTASH_PORT = 5000
 
 logstash_handler = logstash.TCPLogstashHandler(
     host=LOGSTASH_HOST,
     port=LOGSTASH_PORT,
-    version=1,              # Версия формата Logstash
-    message_type='log',     # Тип сообщения, по умолчанию 'logstash'
-    fqdn=False             # Не добавлять FQDN к сообщению
+    version=1,
+    message_type='log',
+    fqdn=False
 )
 
 logger.addHandler(logstash_handler)
 
-# Настройка OpenTelemetry
 trace.set_tracer_provider(
     TracerProvider(
         resource=Resource.create({"service.name": "gateway"})
@@ -49,13 +48,10 @@ trace.set_tracer_provider(
 )
 tracer = trace.get_tracer(__name__)
 
-# Инициализация FastAPI
 app = FastAPI()
 
-# Инструментирование FastAPI
 FastAPIInstrumentor.instrument_app(app)
 
-# Настройка CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -64,10 +60,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Настройка Redis
 redis_client = redis.Redis(host='redis', port=6379, db=0)
 
-# Настройка RabbitMQ
 credentials = pika.PlainCredentials("admin", "admin")
 rabbit_connection = pika.BlockingConnection(pika.ConnectionParameters(host='rabbitmq', credentials=credentials))
 rabbit_channel = rabbit_connection.channel()
@@ -83,7 +77,6 @@ def get_grpc_stub():
     stub = domain_service_pb2_grpc.DomainServiceStub(channel)
     return stub
 
-# Pydantic модели
 class ScheduleBase(BaseModel):
     day_of_week: str = Field(..., example="Monday")
     start_time: str = Field(..., example="09:00")
@@ -124,10 +117,9 @@ async def prometheus_middleware(request, call_next):
 @app.get("/schedules")
 def list_schedules():
     cache_key = "schedules:all"
-    cache_ttl = 60  # Время жизни кэша в секундах (5 минут)
+    cache_ttl = 60  # Время жизни кэша в секундах
 
     try:
-        # Попытка получить данные из кэша
         cached_schedules = redis_client.get(cache_key)
         if cached_schedules:
             logger.info("Cache hit for schedules")
@@ -135,11 +127,9 @@ def list_schedules():
             return schedules
         else:
             logger.info("Cache miss for schedules, querying gRPC")
-            # Запрос к gRPC сервису
             stub = get_grpc_stub()
             request = domain_service_pb2.ListRequest()
             response = stub.ListSchedules(request)
-            # Преобразование ответа в список словарей
             schedules = [
                 {
                     "id": schedule.id,
@@ -161,7 +151,6 @@ def list_schedules():
         logger.error(f"Unexpected error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
-# Эндпоинт GET через gRPC с кешированием
 @app.get("/schedule/{item_id}")
 def get_schedule(item_id: str):
     cache_key = f"schedule:{item_id}"
@@ -181,7 +170,6 @@ def get_schedule(item_id: str):
         logger.error(f"gRPC error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
-# Эндпоинт POST через RabbitMQ
 @app.post("/schedule")
 def create_schedule(schedule: ScheduleCreate):
     message = {
@@ -194,7 +182,7 @@ def create_schedule(schedule: ScheduleCreate):
             routing_key='crud_operations',
             body=json.dumps(message),
             properties=pika.BasicProperties(
-                delivery_mode=2,  # make message persistent
+                delivery_mode=2,
             ))
         logger.info(f"Sent create operation to RabbitMQ: {message}")
         return {"status": "success", "operation": "create"}
@@ -202,7 +190,6 @@ def create_schedule(schedule: ScheduleCreate):
         logger.error(f"Failed to send message to RabbitMQ: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
-# Эндпоинт PUT через RabbitMQ
 @app.put("/schedule")
 def update_schedule(schedule: ScheduleUpdate):
     message = {
@@ -215,7 +202,7 @@ def update_schedule(schedule: ScheduleUpdate):
             routing_key='crud_operations',
             body=json.dumps(message),
             properties=pika.BasicProperties(
-                delivery_mode=2,  # make message persistent
+                delivery_mode=2,
             ))
         logger.info(f"Sent update operation to RabbitMQ: {message}")
         return {"status": "success", "operation": "update"}
@@ -223,7 +210,6 @@ def update_schedule(schedule: ScheduleUpdate):
         logger.error(f"Failed to send message to RabbitMQ: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
-# Эндпоинт DELETE через RabbitMQ
 @app.delete("/schedule/{item_id}")
 def delete_schedule(item_id: str):
     message = {
@@ -236,7 +222,7 @@ def delete_schedule(item_id: str):
             routing_key='crud_operations',
             body=json.dumps(message),
             properties=pika.BasicProperties(
-                delivery_mode=2,  # make message persistent
+                delivery_mode=2,
             ))
         logger.info(f"Sent delete operation to RabbitMQ: {message}")
         return {"status": "success", "operation": "delete"}
