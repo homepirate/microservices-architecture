@@ -94,7 +94,7 @@ def handle_update(data):
         _id = ObjectId(data["id"])
         data.pop("id")
         collection.update_one({"_id": _id}, {"$set": data})
-        logger.info(f"Updated schedule with id {data['id']}: {data}")
+        logger.info(f"Updated schedule with id {_id}: {data}")
     except Exception as e:
         logger.error(f"Error updating schedule: {e}")
 
